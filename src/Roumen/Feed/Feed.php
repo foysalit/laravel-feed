@@ -3,7 +3,7 @@
  * Feed generator class for laravel-feed package.
  *
  * @author Roumen Damianoff <roumen@dawebs.com>
- * @version 2.7.4
+ * @version 2.8.1
  * @link http://roumen.it/projects/laravel-feed
  * @license http://opensource.org/licenses/mit-license.php MIT License
  */
@@ -25,7 +25,7 @@ class Feed
     public $pubdate;
     public $lang;
     public $charset = 'utf-8';
-    public $ctype = 'application/atom+xml';
+    private $responseContentType = null;
     private $caching = 0;
     private $cacheKey = 'laravel-feed';
     private $shortening = false;
@@ -113,12 +113,16 @@ class Feed
         if ($cache != null) $this->caching = $cache;
         if ($key != null) $this->cacheKey = $key;
 
-        if ($format == 'rss') $this->ctype = 'application/rss+xml';
+        $this->responseContentType = $this->getContentType($format);
+
+        $customHeaders = array(
+            'Content-type' => $this->responseContentType.'; charset='.$this->charset
+        );
 
         // if cache is on and there is cached feed => return it
         if ($this->caching > 0 && Cache::has($this->cacheKey))
         {
-            return Response::make(Cache::get($this->cacheKey), 200, array('Content-type' => $this->ctype.'; charset='.$this->charset));
+            return Response::make(Cache::get($this->cacheKey), 200, $customHeaders);
         }
 
         if (empty($this->lang)) $this->lang = Config::get('application.language');
@@ -164,14 +168,14 @@ class Feed
         {
             Cache::put($this->cacheKey, View::make($this->getView($format), $viewData)->render(), $this->caching);
 
-            return Response::make(Cache::get($this->cacheKey), 200, array('Content-type' => $this->ctype.'; charset='.$this->charset));
+            return Response::make(Cache::get($this->cacheKey), 200, $customHeaders);
         }
         else if ($this->caching == 0)
         {
             // if cache is 0 delete the key (if exists) and return response
             $this->clearCache();
 
-            return Response::make(View::make($this->getView($format), $viewData), 200, array('Content-type' => $this->ctype.'; charset='.$this->charset));
+            return Response::make(View::make($this->getView($format), $viewData), 200, $customHeaders);
         }
         else if ($this->caching < 0)
         {
@@ -278,6 +282,44 @@ class Feed
     public function setView($name=null)
     {
         $this->customView = $name;
+    }
+
+
+    /**
+     * Get header content type
+     * Defaults to the 'application/atom+xml' unless a custom content type is set
+     *
+     * @param string $format
+     *
+     * @return void
+     */
+    public function getContentType($format)
+    {
+        // if a custom view is set, we don't have to account for the format and assume
+        // that the developer knows what he's doing
+        if ($this->responseContentType !== null)
+            return $this->responseContentType;
+
+        if ($format == 'rss')
+            return 'application/rss+xml';
+
+        // this is the default content type
+        return 'application/atom+xml';
+    }
+
+
+    /**
+     * Set Custom header content type but normally, the format based content types
+     * provided by the package should get the job done
+     * Must be called before the render method
+     *
+     * @param string $type
+     *
+     * @return void
+     */
+    public function setContentType($type)
+    {
+        $this->responseContentType = $type;
     }
 
 
